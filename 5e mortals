@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Character Generator</title>
+</head>
+<body style="font-family: Arial; padding:20px; max-width:800px;">
+
+<h2>Character Generator</h2>
+
+<label>Power Level:</label>
+<select id="type">
+  <option value="weak">Weak Mortal</option>
+  <option value="average">Average Mortal</option>
+  <option value="gifted">Gifted Mortal</option>
+  <option value="deadly">Deadly Mortal</option>
+</select>
+
+<br><br>
+
+<label>Build Focus:</label>
+<select id="build">
+  <option value="balanced">Balanced</option>
+  <option value="physical">Combat (Physical)</option>
+  <option value="social">Social</option>
+  <option value="mental">Mental</option>
+</select>
+
+<br><br>
+
+<button onclick="generate()">🎲 Generate</button>
+<button onclick="reroll('attributes')">🔁 Attributes</button>
+<button onclick="reroll('skills')">🔁 Skills</button>
+<button onclick="copyText()">📋 Copy</button>
+
+<pre id="output" style="background:#f4f4f4;padding:15px;"></pre>
+
+<h3>Saved Characters</h3>
+<div id="history"></div>
+
+<script>
+const attributes = [
+  "Strength","Dexterity","Stamina",
+  "Charisma","Manipulation","Composure",
+  "Intelligence","Wits"
+];
+
+const skillGroups = {
+  physical: ["Athletics","Brawl","Craft","Drive","Firearms","Melee","Stealth","Survival"],
+  social: ["Animal Ken","Etiquette","Insight","Intimidation","Leadership","Performance","Persuasion","Streetwise","Subterfuge"],
+  mental: ["Academics","Awareness","Finance","Investigation","Larceny","Medicine","Occult","Politics","Science","Technology"]
+};
+
+const skills = Object.values(skillGroups).flat();
+
+const advantagesList = ["Allies","Contacts","Fame","Haven","Influence","Resources","Retainers"];
+
+let current = {};
+
+function sample(arr, n) {
+  return [...arr].sort(() => Math.random() - 0.5).slice(0, n);
+}
+
+function dots(n) {
+  return "●".repeat(n);
+}
+
+function weightedSample(list, n, focusGroup) {
+  let weighted = [];
+
+  list.forEach(item => {
+    let weight = 1;
+    if (focusGroup && skillGroups[focusGroup]?.includes(item)) weight = 3;
+    if (focusGroup && attributes.includes(item)) {
+      if (focusGroup === "physical" && ["Strength","Dexterity","Stamina"].includes(item)) weight = 3;
+      if (focusGroup === "social" && ["Charisma","Manipulation","Composure"].includes(item)) weight = 3;
+      if (focusGroup === "mental" && ["Intelligence","Wits"].includes(item)) weight = 3;
+    }
+    for (let i=0;i<weight;i++) weighted.push(item);
+  });
+
+  return sample([...new Set(weighted)], n);
+}
+
+function assignDots(list, distribution, focus) {
+  let result = {};
+  list.forEach(i => result[i] = 0);
+
+  let remaining = [...list];
+
+  for (let dotsVal in distribution) {
+    let count = distribution[dotsVal];
+    let chosen = weightedSample(remaining, count, focus);
+
+    chosen.forEach(i => {
+      result[i] = parseInt(dotsVal);
+      remaining = remaining.filter(x => x !== i);
+    });
+  }
+
+  return result;
+}
+
+function generateAdvantages(max) {
+  let res = {};
+  let remaining = max;
+
+  while (remaining > 0) {
+    let a = advantagesList[Math.floor(Math.random()*advantagesList.length)];
+    res[a] = (res[a] || 0) + 1;
+    remaining--;
+  }
+  return res;
+}
+
+function generate() {
+  let type = document.getElementById("type").value;
+  let build = document.getElementById("build").value;
+
+  let attrDist, skillDist, advPoints, specialties = 0;
+
+  if (type === "weak") {
+    attrDist = {2:2,1:6};
+    skillDist = {2:3,1:5};
+    advPoints = 3;
+  }
+  if (type === "average") {
+    attrDist = {3:2,2:3,1:3};
+    skillDist = {3:3,2:4,1:5};
+    advPoints = 3;
+  }
+  if (type === "gifted") {
+    attrDist = {4:1,3:2,2:2,1:3};
+    skillDist = {4:2,3:4,2:4,1:4};
+    advPoints = 10;
+    specialties = 1;
+  }
+  if (type === "deadly") {
+    attrDist = {5:2,4:2,3:2,2:2};
+    skillDist = {5:1,4:3,3:5,2:6};
+    advPoints = 15;
+    specialties = 3;
+  }
+
+  current.attributes = assignDots(attributes, attrDist, build);
+  current.skills = assignDots(skills, skillDist, build);
+  current.advantages = generateAdvantages(advPoints);
+  current.specialties = specialties;
+
+  render();
+}
+
+function reroll(type) {
+  if (!current.attributes) return;
+
+  let build = document.getElementById("build").value;
+
+  if (type === "attributes") {
+    current.attributes = assignDots(attributes, Object.fromEntries(
+      Object.entries(current.attributes).reduce((acc,[k,v])=>{
+        acc[v]=(acc[v]||0)+1; return acc;
+      },{})
+    ), build);
+  }
+
+  if (type === "skills") {
+    current.skills = assignDots(skills, Object.fromEntries(
+      Object.entries(current.skills).reduce((acc,[k,v])=>{
+        acc[v]=(acc[v]||0)+1; return acc;
+      },{})
+    ), build);
+  }
+
+  render();
+}
+
+function render() {
+  let out = "=== CHARACTER ===\n\n";
+
+  out += "ATTRIBUTES\n";
+  for (let a of attributes) {
+    out += `${a}: ${dots(current.attributes[a])}\n`;
+  }
+
+  out += "\nSKILLS\n";
+  let specLeft = current.specialties;
+
+  Object.keys(current.skills)
+    .filter(s => current.skills[s] > 0)
+    .sort((a,b)=>current.skills[b]-current.skills[a])
+    .forEach(s => {
+      let line = `${s}: ${dots(current.skills[s])}`;
+      if (specLeft > 0 && Math.random() < 0.25) {
+        line += " (Specialty)";
+        specLeft--;
+      }
+      out += line + "\n";
+    });
+
+  out += "\nADVANTAGES\n";
+  for (let a in current.advantages) {
+    out += `${a}: ${dots(current.advantages[a])}\n`;
+  }
+
+  document.getElementById("output").textContent = out;
+
+  saveToHistory(out);
+}
+
+function copyText() {
+  navigator.clipboard.writeText(document.getElementById("output").textContent);
+}
+
+function saveToHistory(text) {
+  let div = document.createElement("pre");
+  div.textContent = text;
+  div.style.background = "#eee";
+  div.style.padding = "10px";
+  document.getElementById("history").prepend(div);
+}
+</script>
+
+</body>
+</html>
